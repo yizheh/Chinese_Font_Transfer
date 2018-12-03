@@ -15,24 +15,12 @@ batch_size = 32
 element_num = batch_size*image_dim[0]*image_dim[1]*image_dim[2]
 epochs = 5
 beta1 = 0.9
-lambda_p = 0.1
-lambda_1 = 0.1
+lambda_p = 0.01
+lambda_1 = 0.01
 lambda_2 = 0.1
 lambda_3 = 0.1
+print_every = 1
 
-#%%
-
-
-
-#%%
-def model_inputs(image_dim):
-
-    target_fonts = tf.placeholder(
-        tf.float32, (None,  128, 128, 1), name='target_font')
-    source_fonts = tf.placeholder(
-        tf.float32, (None,  128, 128, 1), name='source_font')
-
-    return target_fonts, source_fonts
 
 # %%
 
@@ -45,9 +33,8 @@ def selu(x):
 
 # %%
 def generator(source_font, reuse=False, training=True):
-    with tf.variable_scope('generator', reuse=reuse):
-        w_init = tf.contrib.layers.xavier_initializer()
 
+    with tf.variable_scope('generator', reuse=reuse):
         # input tensor size is 128*128*1
         input_layer = tf.reshape(source_font, (-1, 128, 128, 1))
 
@@ -161,7 +148,7 @@ def generator(source_font, reuse=False, training=True):
         conv9 = tf.layers.conv2d(
             inputs=conv9, filters=1, kernel_size=3, padding='same')
         conv9 = tf.layers.batch_normalization(conv9, training=True)
-        conv9 = tf.nn.sigmoid(conv9,)
+        conv9 = tf.nn.sigmoid(conv9)
 
         return conv9
 
@@ -202,155 +189,150 @@ def discriminator(x, reuse=False):
 
 
 # %%
-def model_loss(target_font, generated_font, element_num, lambda_p, lambda_1, lambda_2, lambda_3):
-    real_score = discriminator(target_font)
-    fake_score = discriminator(generated_font, reuse=True)
-
-    # v1_loss is the pix2pix loss
-    v1_loss = tf.reduce_sum(- lambda_p * np.multiply(target_font, tf.log(generated_font)
-                                                     ) - np.multiply(1-target_font, tf.log(1-generated_font)))
-    v1_loss /= element_num
-    #v1_loss = v1_loss / target_font.shape[0]
-
-    # v2_loss evaluates the discriminator performence of seperating generated fonts from target fonts
-    v2_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=real_score, labels=tf.ones_like(
-        real_score))) + tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=fake_score, labels=tf.zeros_like(fake_score)))
-
-    # v3_loss evaluate the generator performence of generating real fonts
-    v3_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(
-        logits=fake_score, labels=tf.ones_like(fake_score)))
-
-    generator_loss = lambda_1 * v1_loss + lambda_2 * v3_loss
-    discriminator_loss = lambda_3 * v2_loss
-
-    return discriminator_loss, generator_loss
-
-
-# %%
-
-def model_opt(generator_loss, discriminator_loss, learning_rate, beta1):
-    t_vars = tf.trainable_variables()
-    d_vars = [var for var in t_vars if var.name.startswith('discriminator')]
-    g_vars = [var for var in t_vars if var.name.startswith('generator')]
-
-    with tf.control_dependencies(tf.get_collection(tf.GraphKeys.UPDATE_OPS)):
-        d_train_opt = tf.train.AdamOptimizer(learning_rate, beta1=beta1).minimize(
-            discriminator_loss, var_list=d_vars)
-        g_train_opt = tf.train.AdamOptimizer(
-            learning_rate, beta1=beta1).minimize(generator_loss, var_list=g_vars)
-
-    return d_train_opt, g_train_opt
-
-
-# %%
-class GAN:
-    def __init__(self, image_dim, element_num, learning_rate, lambda_p, lambda_1, lambda_2, lambda_3, beta1=0.5):
+class TransNN:
+    def __init__(self):
         tf.reset_default_graph()
 
-        self.target_font, self.source_font = model_inputs(image_dim)
+    '''def input_setup(self, image_dim):
+        
+        self.target_fonts = tf.placeholder(
+            tf.float32, (None,  128, 128, 1), name='target_font')
+        self.source_fonts = tf.placeholder(
+            tf.float32, (None,  128, 128, 1), name='source_font')'''
 
-        self.generated_font = generator(self.source_font)
+    def model_setup(self):
+        '''
+        This function sets up the model to train
+        '''
+        self.target_fonts = tf.placeholder(
+            tf.float32, (None,  128, 128, 1), name='target_fonts')
+        self.source_fonts = tf.placeholder(
+            tf.float32, (None,  128, 128, 1), name='source_fonts')
 
-        self.d_loss, self.g_loss = model_loss(
-            self.target_font, self.generated_font, element_num, lambda_p, lambda_1, lambda_2, lambda_3)
+        self.generated_fonts = generator(self.source_fonts)
+        self.real_score = discriminator(self.target_fonts)
+        self.fake_score = discriminator(self.generated_fonts, reuse=True)
 
-        self.d_opt, self.g_opt = model_opt(
-            self.g_loss, self.d_loss, learning_rate, beta1)
+    def model_loss(self):
+        v1_loss = tf.reduce_sum(- lambda_p * np.multiply(self.target_fonts, tf.log(self.generated_fonts)
+                                                         ) - np.multiply(1-self.target_fonts, tf.log(1-self.generated_fonts)))
+        v1_loss /= element_num
+        #v1_loss = v1_loss / target_font.shape[0]
+
+        # v2_loss evaluates the discriminator performence of seperating generated fonts from target fonts
+        v2_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=self.real_score, labels=tf.ones_like(
+            self.real_score))) + tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=self.fake_score, labels=tf.zeros_like(self.fake_score)))
+
+        # v3_loss evaluate the generator performence of generating real fonts
+        v3_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(
+            logits=self.fake_score, labels=tf.ones_like(self.fake_score)))
+
+        self.generator_loss = lambda_1 * v1_loss + lambda_2 * v3_loss
+        self.discriminator_loss = lambda_3 * v2_loss
+
+        self.model_vars = tf.trainable_variables()
+
+        d_vars = [var for var in self.model_vars if var.name.startswith(
+            'discriminator')]
+        g_vars = [
+            var for var in self.model_vars if var.name.startswith('generator')]
+
+        self.d_train_opt = tf.train.AdamOptimizer(learning_rate, beta1=beta1).minimize(
+            self.discriminator_loss, var_list=d_vars)
+        self.g_train_opt = tf.train.AdamOptimizer(
+            learning_rate, beta1=beta1).minimize(self.generator_loss, var_list=g_vars)
+
+    def train(self):
+        self.model_setup()
+
+        self.model_loss()
+
+        init = tf.global_variables_initializer()
+        saver = tf.train.Saver()
+        config = tf.ConfigProto()
+        config.gpu_options.allow_growth = True
+
+        with tf.Session(config=config) as sess:
+            sess.run(init)
+
+            # Training
+            for epoch_no in range(epochs):
+                batch_no = 0
+
+                for source_font, target_font in dataset.get_batches(batch_size):
+                    batch_no += 1
+                    print("Batch No: {}/{} ".format(batch_no, dataset.train_num // batch_size))
+
+                    # Use generator to generate fonts from source fonts
+                    sess.run(self.generated_fonts, feed_dict={
+                             self.source_fonts: source_font, self.target_fonts: target_font})
+
+                    # Optimize the discriminator
+                    sess.run(self.d_train_opt, feed_dict={
+                             self.target_fonts: target_font, self.source_fonts: source_font})
+
+                    # Optimize the generator
+                    sess.run(self.g_train_opt, feed_dict={
+                             self.target_fonts: target_font, self.source_fonts: source_font})
+
+                    if epoch_no % print_every == 0:
+                        train_loss_d = self.discriminator_loss.eval(
+                            {self.target_fonts: target_font, self.source_fonts: source_font})
+                        train_loss_g = self.generator_loss.eval(
+                            {self.source_fonts: source_font, self.target_fonts: target_font})
+
+                        print("Epoch {}/{}...".format(epoch_no+1, epochs),
+                              "Discriminator Loss: {:.8f}...".format(
+                                  train_loss_d),
+                              "Generator Loss: {:.8f}".format(train_loss_g))
+                        # Save losses to view after training
+                        #losses.append((train_loss_d, train_loss_g))
+
+            saver.save(sess, './checkpoints/generator')
+
+    def test(self):
+        print("Testing the results")
+
+        # self.model_setup()
+
+        init = tf.global_variables_initializer()
+        saver = tf.train.Saver()
+        config = tf.ConfigProto()
+        config.gpu_options.allow_growth = True
+
+        with tf.Session(config=config) as sess:
+            sess.run(init)
+
+            saver = tf.train.import_meta_graph('./checkpoints/generator.meta')
+            saver.restore(sess, tf.train.latest_checkpoint('./checkpoints/'))
+            graph = tf.get_default_graph()
+            image_no = 0
+            
+            for num in range(0, dataset.test_num, batch_size):
+                generated_fonts = sess.run(self.generated_fonts, feed_dict={
+                                           self.source_fonts: dataset.test['source_font'][num:num+batch_size], self.target_fonts: dataset.test['target_font'][num:num+batch_size]})
+                source_fonts = dataset.test['target_font'][num:num+batch_size]
+
+                for batch_no in range( min( batch_size, generated_fonts.shape[0]) ):
+                    generated_font = generated_fonts[batch_no]
+                    target_font = source_fonts[batch_no]
+
+                    mid = np.append(generated_font, generated_font, axis=2)
+                    mid = np.append(generated_font, mid, axis=2)
+                    mid = mid*255
+                    mid = mid.astype('uint8')
+                    img = Image.fromarray(mid)
+                    img.save(fp='./generated_fonts/generated_' + str(image_no) + '.jpg')
+
+                    mid[:, :, :] = target_font
+                    mid = mid*255
+                    mid = mid.astype('uint8')
+                    img = Image.fromarray(mid)
+                    img.save(fp='./generated_fonts/target_'+str(image_no)+'.jpg')
+
+                    image_no += 1
 
 
-# %%
-def train(net, dataset, epochs, batch_size, print_every=5):
-    #sample_z = data_generator()
-
-    samples, losses = [], []
-    steps = 0
-    a = np.zeros((1, 128, 128, 1))
-    a = a.astype(np.float32)
-
-    saver = tf.train.Saver()
-    config = tf.ConfigProto()
-    config.gpu_options.allow_growth = True
-
-    with tf.Session(config=config) as sess:
-        img_generated = tf.Variable(
-            tf.random_normal(shape=[batch_size, 128, 128, 1]), name='font_generator')
-        sess.run(tf.global_variables_initializer())
-
-        for e in range(epochs):
-            for source_font, target_font in dataset.get_batches(batch_size):
-                steps += 1
-                print(steps)
-
-                img_generated = net.generated_font
-                sess.run(img_generated, feed_dict={
-                    net.target_font: target_font, net.source_font: source_font})
-
-                _ = sess.run(net.d_opt, feed_dict={
-                             net.target_font: target_font, net.source_font: source_font})
-                _ = sess.run(net.g_opt, feed_dict={
-                             net.target_font: target_font, net.source_font: source_font})
-
-                if steps % print_every == 0:
-                    train_loss_d = net.d_loss.eval(
-                        {net.target_font: target_font, net.source_font: source_font})
-                    train_loss_g = net.g_loss.eval(
-                        {net.source_font: source_font, net.target_font: target_font})
-
-                    print("Epoch {}/ {}...".format(e+1, epochs),
-                          "Discriminator Loss: {:.8f}...".format(train_loss_d),
-                          "Generator Loss: {:.8f}".format(train_loss_g))
-                    # Save losses to view after training
-                    losses.append((train_loss_d, train_loss_g))
-
-        saver.save(sess, './checkpoints/generator')
-
-        return losses
-
-# %%
-
-
-def test(net, dataset, print_every=5):
-    config = tf.ConfigProto()
-    config.gpu_options.allow_growth = True
-    with tf.Session(config=config) as sess:
-        saver = tf.train.import_meta_graph('./checkpoints/generator.meta')
-        saver.restore(sess, tf.train.latest_checkpoint('./checkpoints/'))
-
-        graph = tf.get_default_graph()
-        source_font = graph.get_tensor_by_name('source_font:0')
-        target_font = graph.get_tensor_by_name('target_font:0')
-        font_generator = graph.get_tensor_by_name('font_generator:0')
-        sess.run(tf.global_variables_initializer())
-
-        generated_fonts = sess.run(font_generator, feed_dict={
-            source_font: dataset.test['source_font'], target_font: dataset.test['target_font']})
-
-        print(generated_fonts.shape, target_font.shape )
-
-        num = 1
-        mid = np.zeros((128, 128, 3))
-        for num in range(dataset.test_num):
-            generated_font = generated_fonts[num]
-            target_font = dataset.test['target_font'][num]
-            mid[:, :, :] = generated_font
-            mid = mid*255
-            mid = mid.astype('uint8')
-            img = Image.fromarray(mid)
-            img.save(fp='./generated_fonts/generated_' + str(num) + '.jpg')
-
-            mid[:, :, :] = target_font
-            mid = mid*255
-            mid = mid.astype('uint8')
-            img = Image.fromarray(mid)
-            img.save(fp='./generated_fonts/target_'+str(num)+'.jpg')
-            num += 1
-
-
-# %%
-
-
-
-# %%
 
 
 # %%
@@ -359,14 +341,15 @@ def test(net, dataset, print_every=5):
 source_fonts, target_fonts = data_preprocess()
 dataset = Dataset(source_fonts, target_fonts, test_frac=0.1, val_frac=0)
 
-net = GAN((128, 128, 1), element_num, learning_rate,
-          lambda_p, lambda_1, lambda_2, lambda_3)
-losses = train(net, dataset, epochs, batch_size)
+# %%
+net = TransNN()
+net.train()
 print("Training Finished!")
 
-test(net, dataset)
+net.test()
 
-# %%
+print("Test Finished!")
+
 
 
 # %%
