@@ -8,7 +8,7 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
 
 # %%
-def data_preprocess(path='/home/yizhehang/Research/Chinese_Font_Transfer/Font2img/img_lib',
+def data_preprocess(path='/home/xinsheng/yizhehang/Research/Chinese_Font_Transfer/Font2img/img_lib',
                     source_font='heiti',
                     target_font='lixuke'):
     """
@@ -20,8 +20,8 @@ def data_preprocess(path='/home/yizhehang/Research/Chinese_Font_Transfer/Font2im
     target_path = path + '/' + target_font
     target_fonts = list()
     files = os.listdir(source_path)
-    mid1 = np.zeros((128, 128, 1))
-    mid2 = np.zeros((128, 128, 1))   
+    mid1 = np.zeros((64, 64, 1))
+    mid2 = np.zeros((64, 64, 1))   
 
     
     for file in files:
@@ -64,7 +64,7 @@ img.show()'''
 
 
 class Dataset:
-    def __init__(self, source_fonts, target_fonts, test_frac=0.4, val_frac=0.1, shuffle=False, scale_func=None):
+    def __init__(self, source_fonts, target_fonts, test_frac=0.4, val_frac=0.1, scale_func=None):
         """
             create the training set, validation set and testing set
         """
@@ -100,19 +100,18 @@ class Dataset:
         self.valid['target_font'] =target_fonts[self.train_num: self.train_num+self.val_num]
         self.test['target_font'] =target_fonts[self.train_num + self.val_num:]
 
-        self.shuffle = shuffle
+    def shuffle_data( self ):
+        idx = np.arange(self.train_num)
+        np.random.shuffle(idx)
+        self.train['source_font'], self.train['target_font'] = self.train['source_font'][idx], self.train['target_font'][idx]
 
     def get_batches(self, batch_size):
         """
             generate one batch of data
         """
-        if self.shuffle:
-            idx = np.arrange(len(self.train_num))
-            np.random.shuffle(idx)
-            self.train['source_font'], self.train['target_font'] = self.train['source_target'][idx], self.train['target_font'][idx]
+        batch_num = self.train_num // batch_size
 
-        # n_batches = self.train_num // batch_size
-        for ii in range(0, self.train_num, batch_size):
+        for ii in range(0, batch_num * batch_size, batch_size):
             source_font = self.train['source_font'][ii:ii+batch_size]
             target_font = self.train['target_font'][ii:ii+batch_size]
 
